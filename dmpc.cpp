@@ -64,7 +64,7 @@ USING_NAMESPACE_ACADO
     DifferentialEquation f;
     OCP ocp(0.0, 30, 90);
 
-    Expression d01, d1N, D01, D10, D1N, DN1, P_f01, P_f1N, P01N_min, E1, F_u1, F_t, F1, J1, L1;
+    Expression d01, d1N, theta01, theta10, theta1N, thetaN1, D01, D10, D1N, DN1, P_f01, P_f1N, P01N_min, E1, F_u1, F_t, F1, J1, L1;
     Expression E_tmp, P_cons;
 
     E_tmp << W_start_glide / (S * rho * v_a1*v_a1) / cos(phi1);
@@ -72,11 +72,16 @@ USING_NAMESPACE_ACADO
 
     d01 << sqrt((h1-h0)*(h1-h0) + (x1-x0)*(x1-x0) + (y1-y0)*(y1-y0));
     d1N << sqrt((hN-h1)*(hN-h1) + (xN-x1)*(xN-x1) + (yN-y1)*(yN-y1));
-
-    D01 << G0 * (10 - acos(-(h1-h0) / d01)*acos(-(h1-h0) / d01));
-    D10 << G1 * (10 - acos(((x1-x0)*(-sin(phi1)*sin(psi1)) + (y1-y0)*(sin(phi1)*cos(psi1)) + (h1-h0)*(-cos(phi1))) / d01)*acos(((x1-x0)*(-sin(phi1)*sin(psi1)) + (y1-y0)*(sin(phi1)*cos(psi1)) + (h1-h0)*(-cos(phi1))) / d01));
-    D1N << G1 * (10 - acos(((x1-xN)*(-sin(phi1)*sin(psi1)) + (y1-yN)*(sin(phi1)*cos(psi1)) + (h1-hN)*(-cos(phi1))) / d1N)*acos(((x1-xN)*(-sin(phi1)*sin(psi1)) + (y1-yN)*(sin(phi1)*cos(psi1)) + (h1-hN)*(-cos(phi1))) / d1N));
-    DN1 << GN * (10 - acos(-(hN-h1) / d1N)*acos(-(hN-h1) / d1N));
+    
+    theta01 << acos(-(h1-h0) / d01);
+    theta10 << acos(((x1-x0)*(-sin(phi1)*sin(psi1)) + (y1-y0)*(sin(phi1)*cos(psi1)) + (h1-h0)*(-cos(phi1))) / d01);
+    theta1N << acos(((x1-xN)*(-sin(phi1)*sin(psi1)) + (y1-yN)*(sin(phi1)*cos(psi1)) + (h1-hN)*(-cos(phi1))) / d1N);
+    thetaN1 << acos(-(hN-h1) / d1N);
+    
+    D01 << G0 * cos(theta01);
+    D10 << G1 * cos(theta10);
+    D1N << G1 * cos(theta1N);
+    DN1 << GN * cos(thetaN1);
     
     P_f01 << D10 * D01 / (d01*d01); // with constants removed
     P_f1N << DN1 * D1N / (d1N*d1N); // with constants removed
