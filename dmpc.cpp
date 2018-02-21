@@ -64,10 +64,10 @@ USING_NAMESPACE_ACADO
     DifferentialEquation f;
     OCP ocp(0.0, 30, 90);
 
-	Expression d01, d1N, D01, D10, D1N, DN1, P_f01, P_f1N, P01N_min, E1, F_u1, F_t, F1, J1, L1;
+    Expression d01, d1N, D01, D10, D1N, DN1, P_f01, P_f1N, P01N_min, E1, F_u1, F_t, F1, J1, L1;
     Expression E_tmp, P_cons;
 
-    E_tmp << W_start_glide / (S * rho * v_a1*v_a1);
+    E_tmp << W_start_glide / (S * rho * v_a1*v_a1) / cos(phi1);
     P_cons << V_batt * S * rho * v_a1*v_a1*v_a1 * (2032*E_tmp*E_tmp - 230*E_tmp + 89) / (20000*V_init*eta_p_bldc);
 
     d01 << sqrt((h1-h0)*(h1-h0) + (x1-x0)*(x1-x0) + (y1-y0)*(y1-y0));
