@@ -98,11 +98,33 @@ namespace MultiAgent
         agents[index].psi[0] = m_estimatedstate->psi; //current yaw angle
         agents[index].phi0 = m_estimatedstate->phi; //current roll angle
         state_time[index] = Clock::getMsec();
-        float speed_g = Math::norm(Math::norm(m_estimatedstate->vx,m_estimatedstate->vy),m_estimatedstate->vz);//ts.speed;
-        float speed_g2 = sqrt( pow(agents[index].v_a0*cos(agents[index].psi[0]) + agents[index].v_w*cos(agents[index].psi_w), 2) + pow(agents[index].v_a0*sin(agents[index].psi[0]) + agents[index].v_w*sin(agents[index].psi_w),2) );
+        //float speed_g = Math::norm(Math::norm(m_estimatedstate->vx,m_estimatedstate->vy),m_estimatedstate->vz);//ts.speed;
+        //float speed_g2 = sqrt( pow(agents[index].v_a0*cos(agents[index].psi[0]) + agents[index].v_w*cos(agents[index].psi_w), 2) + pow(agents[index].v_a0*sin(agents[index].psi[0]) + agents[index].v_w*sin(agents[index].psi_w),2) );
 
-        inf("\t %5.2f\t %5.2f\t %5.2f\t %5.2f\t %5.2f\t %5.2f\t %5.2f\t %5.2f\t %5.2f\t %5.2f\t",
-          agents[index].x[0],agents[index].y[0],agents[index].psi[0]*180/pi,agents[index].v_a0,agents[index].phi0*180/pi,speed_g,speed_g2,sqrt(pow(agents[index].x[0] - agents[0].x[0], 2) + pow(agents[index].y[0] - agents[0].y[0], 2)),sqrt(pow(agents[index].x[0] - agents[1].x[0], 2) + pow(agents[index].y[0] - agents[1].y[0], 2)),sqrt(pow(agents[index].x[0] - agents[2].x[0], 2) + pow(agents[index].y[0] - agents[2].y[0], 2)));
+        inf("\t %5.2f\t %5.2f\t %5.2f\t %5.2f\t %5.2f\t %5.2f\t %5.2f\t %5.2f\t",
+          agents[index].x[0],agents[index].y[0],agents[index].psi[0]*180/pi,agents[index].v_a0,agents[index].phi0*180/pi,sqrt(pow(agents[index].x[0] - agents[0].x[0], 2) + pow(agents[index].y[0] - agents[0].y[0], 2)),sqrt(pow(agents[index].x[0] - agents[1].x[0], 2) + pow(agents[index].y[0] - agents[1].y[0], 2)),sqrt(pow(agents[index].x[0] - agents[2].x[0], 2) + pow(agents[index].y[0] - agents[2].y[0], 2)));
+      
+        //check if Nb_x x Nb_y cells are visited
+        int x_idx = (int)agents[index].x[0]/res;
+        int y_idx = (int)agents[index].y[0]/res;
+        //debug("F = %f",calculate_F(agents[index].x[0],agents[index].y[0],agents[index].B,r,phi_out));
+        //debug("Cell ----- [%d,%d]",x_idx,y_idx);
+        for (int i = (x_idx - R/res); i <= (x_idx + R/res); i++)
+        {
+          for (int j = (y_idx - R/res); j <= (y_idx + R/res); j++)
+          {
+            //debug("i=%d,j%d \n",i,j);
+            if ( (i>=0) && (i<Nb_x) && (j>=0) && (j<Nb_y) && check_if_grid_is_inside_R(agents[index].x[0],agents[index].y[0],r_out[i][j]))
+            {
+              //debug("i,j[%d,%d] idx [%d,%d] B %d",i,j,x_idx,y_idx,agents[index].B[i][j]);
+              if (agents[index].B[i][j] == 0) debug("----------- VISITED [%d,%d] phi=%f [%d,%d] ---------------",i,j,phi_out[i][j],x_idx,y_idx);
+              //if (agents[index].B[i][j] == 1) debug(" ALREADY ---------- [%d,%d] phi=%f [%d,%d] ---------------",i,j,phi_out[i][j],x_idx,y_idx);
+              
+              agents[index].B[i][j] = 1;
+            }
+          }
+        }
+
       }
 
       void
@@ -130,7 +152,6 @@ namespace MultiAgent
           debug("First controls dispatched (Loiter) at %ld",Clock::getMsec());
 
           //Load the probabilistic map of the grids
-          loadphi();
         }
 
         if ((trg->z == 0) && (first == 0)) //disable MPC-PSO
@@ -178,6 +199,16 @@ namespace MultiAgent
       void
       onResourceInitialization(void)
       {
+        loadphi();
+
+        for (int i = 0; i < Nb_x; i++)
+        {
+          for (int j = 0; j < Nb_y; j++)
+          {
+            r_out[i][j].x = (x_min + res/2) + res*i;
+            r_out[i][j].y = (y_min + res/2) + res*j;
+          }
+        } 
       }
 
       //! Release resources.
@@ -208,7 +239,8 @@ namespace MultiAgent
               for (int i = 0; i < I; i++) forward_euler(agents[i].x, agents[i].y, agents[i].psi, agents[i].v_w, agents[i].psi_w, agents[i].u_phi, agents[i].u_v, Dt_MPC);
               //debug("After up  \t %5.2f\t %5.2f\t %5.2f\t %5.2f\t %5.2f\t",
               //agents[index].x[0],agents[index].y[0],agents[index].psi[0],agents[index].v_a0,agents[index].phi0*180/pi);
-              PSO(index, agents,r_out,phi_out); //Calls the MPC-PSO algorithm, which also updates the states of the agents
+
+              PSO(index, agents); //Calls the MPC-PSO algorithm, which also updates the states of the agents
               after_PSO = Clock::getMsec();
               Dt_PSO = ((double)after_PSO - (double)before_PSO)/1000.0;
               //v_a
@@ -227,13 +259,58 @@ namespace MultiAgent
               Dt_tot = ((double)current_time - (double)last_time)/1000.0;
               last_time = current_time;
               //debug("Dt_tot = %lf , Dt_PSO = %lf",Dt_tot,Dt_PSO);
-              debug("Dt_PSO=%f,phi=%f->%f, v_a=%f->%f",Dt_PSO,agents[index].phi0*180/pi,droll.value*180/pi,agents[index].v_a0,dspeed.value);
+              inf("Dt_PSO=%f,phi=%f->%f, v_a=%f->%f",Dt_PSO,agents[index].phi0*180/pi,droll.value*180/pi,agents[index].v_a0,dspeed.value);
+
+              
+
+
+                ////////////////////////////////////////////////////////////
+                  //update the cells that the agents are planning to visit
 
               float controls[N*2];
               for (int k=0;k<N;k++) controls[k] = agents[index].u_phi[k];
               for (int k=0;k<N;k++) controls[k+N] = agents[index].u_v[k];
 
-              debug("cost=%f",cost_function(index,controls,agents,r_out,phi_out));
+
+                  for (int i = 0; i < I; i++)
+                  {
+                    if (1)
+                    {
+                      for (int k = 0; k < (N+1); k++)
+                      { 
+                        //check if cells are going to be visited
+                        int x_idx = (int)agents[i].x[k]/res;
+                        int y_idx = (int)agents[i].y[k]/res;
+                        for (int l = (x_idx - R/res); l <= (x_idx + R/res); l++)
+                        {
+                          for (int j = (y_idx - R/res); j <= (y_idx + R/res); j++)
+                          {
+                            //printf("x=%f,y=%f \n",x1[k],y1[k]);
+                            if ( (l>=0) && (l<Nb_x) && (j>=0) && (j<Nb_y) && check_if_grid_is_inside_R(agents[i].x[k],agents[i].y[k],r[l][j]) )
+                            {
+                              agents[i].b[l][j] = 1;
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+
+              debug("cost=%f",cost_function(index,controls,agents));
+
+
+              //zero all the cells that the agents are planning to visit
+              for (int i = 0; i < I; i++)
+              {
+                for (int l = 0; l < Nb_x; l++)
+                {
+                  for (int j = 0; j < Nb_y; j++)
+                  {
+                    agents[i].b[l][j] = 0;
+                  }
+                }
+              }
+              //////////////////////////////////////////////////////
 
               send_self(index, agents);
               trace("State and Control Inputs dispatched at %ld", Clock::getMsec());
@@ -347,6 +424,9 @@ namespace MultiAgent
         magt_self.u_phi_30 = agents_[index_].u_phi[29];
 
         magt_self.i = index_;  //write agent index in the message
+
+        magt_self.data.assign((char*)agents_[index_].B,(char*)agents_[index_].B + sizeof(agents_[index_].B));
+
         dispatch(magt_self);  //dispatch message
       }
 
@@ -428,6 +508,16 @@ namespace MultiAgent
         agents[magt->i].u_phi[28] = magt->u_phi_29;
         agents[magt->i].u_phi[29] = magt->u_phi_30;
 
+        int k = 0;
+        for (int i = 0; i < Nb_x; i++)
+        {
+          for (int j = 0; j < Nb_x; j++)
+          {
+            agents[magt->i].B[i][j] = magt->data[k];
+            k = k + 1;
+          }
+        }
+
         controls_received[magt->i] = 1;
         state_time[magt->i] = Clock::getMsec();
         trace("Controls received from agent %d at %ld",magt->i,state_time[magt->i]);
@@ -461,7 +551,7 @@ namespace MultiAgent
 
 DUNE_TASK
 
-float cost_function(int index, float controls[], struct agent agents[], struct point2d r[Nb_x][Nb_y], float phi[Nb_x][Nb_y])
+float cost_function(int index, float controls[], struct agent agents[])
 {
     for (int k = 0; k < N; k++) agents[index].u_phi[k] = controls[k];
     for (int k = 0; k < N; k++) agents[index].u_v[k] = controls[k+N];
@@ -470,23 +560,23 @@ float cost_function(int index, float controls[], struct agent agents[], struct p
     //EVALUATE COST FUNCTION
     float F = 0;
     float total_cost = 0.0;
-    float sum_phi_y = 0;
+    
     float d[I];
-
+    signed char B[Nb_x][Nb_y];
+    //Accumulate the cells visited by the agents and the ones that the other agents plan to visit
     for (int i = 0; i < I; i++)
     {
         if (i != index) 
         {
-          for (int j = 0; j < Nb_x; j++)
-          {
-            for (int k = 0; k < Nb_y; k++)
+            for (int j = 0; j < Nb_x; j++)
             {
-              agents[index].B[j][k] = agents[index].B[j][k] || agents[i].b[j][k];
+                for (int k = 0; k < Nb_y; k++)
+                {
+                    B[j][k] = agents[index].B[j][k] || agents[i].B[j][k] || agents[i].b[j][k];
+                }
             }
-          }
         }
     } 
-
     //anti colision for future steps. current step doesn't matter
     for (int k = 1; k < N; k++)
     {
@@ -496,12 +586,11 @@ float cost_function(int index, float controls[], struct agent agents[], struct p
         if ((d[i] < r_c) && (i != index)) return 99999999999999999999999999999999999999999999999999999999999999999999.9;
       }
     }
-
     for (int k = 0; k < (N+1); k++)
     { 
         //Lagrangian term
-        float phi_y = 0;
-        //check if 50x50 cells are visited
+        
+        //check if cells are being visited
         int x_idx = (int)agents[index].x[k]/res;
         int y_idx = (int)agents[index].y[k]/res;
         for (int i = (x_idx - R/res); i <= (x_idx + R/res); i++)
@@ -509,26 +598,31 @@ float cost_function(int index, float controls[], struct agent agents[], struct p
             for (int j = (y_idx - R/res); j <= (y_idx + R/res); j++)
             {
                 //printf("x=%f,y=%f \n",x1[k],y1[k]);
-                if (check_if_grid_is_inside_R(agents[index].x[k],agents[index].y[k],r[i][j]))
+                if ( (i>=0) && (i<Nb_x) && (j>=0) && (j<Nb_y) && check_if_grid_is_inside_R(agents[index].x[k],agents[index].y[k],r_out[i][j]))
                 {
-                    agents[index].B[i][j] = 1;
+                    if (B[i][j] == 0) B[i][j] = 1;
+                    if (B[i][j] == 1) B[i][j] = -1;
                 }
             }
         }
+    }
+
+    float phi_y;
+    float sum_phi_y = 0;
+    for (int k = 0; k < (N+1); k++)
+    {
+        phi_y = 0;
         for (int i = 0; i < Nb_x; i++)
         {
             for (int j = 0; j < Nb_y; j++)
             {
-                phi_y = phi_y + phi[i][j]*agents[index].B[i][j];
+                if (B[i][j] != 0) phi_y = phi_y + phi_out[i][j]*B[i][j];
             }
         }
         sum_phi_y = sum_phi_y + phi_y;
     }
-
-    F = calculate_F(agents[index].x[N],agents[index].y[N],agents[index].B,r,phi); //r_x[Nb], r_y[Nb]: position of center of cells; b[Nb] is the binary of cell visit
+    F = 0.01*calculate_F(agents[index].x[N],agents[index].y[N],B); //r_x[Nb], r_y[Nb]: position of center of cells; b[Nb] is the binary of cell visit
     total_cost = F - sum_phi_y; //Eq 13
-    printf("F = %f\t \n",F);
-    printf("sum_phi_y = %f\t \n",sum_phi_y);
     return total_cost;
 }
 //ok
@@ -574,8 +668,34 @@ float getRandomClamped()
 }
 
 //Optimization
-void PSO(int index, struct agent *agents, struct point2d r[Nb_x][Nb_y], float phi[Nb_x][Nb_y])
+void PSO(int index, struct agent *agents)
 {
+    //update the cells that the agents are planning to visit
+    for (int i = 0; i < I; i++)
+    {
+      if (i != index)
+      {
+        for (int k = 0; k < (N+1); k++)
+        { 
+          //check if cells are going to be visited
+          int x_idx = (int)agents[i].x[k]/res;
+          int y_idx = (int)agents[i].y[k]/res;
+          for (int l = (x_idx - R/res); l <= (x_idx + R/res); l++)
+          {
+            for (int j = (y_idx - R/res); j <= (y_idx + R/res); j++)
+            {
+              //printf("x=%f,y=%f \n",x1[k],y1[k]);
+              if ( (l>=0) && (l<Nb_x) && (j>=0) && (j<Nb_y) && check_if_grid_is_inside_R(agents[i].x[k],agents[i].y[k],r_out[l][j]))
+              {
+                agents[i].b[l][j] = 1;
+              }
+            }
+          }
+        }
+      }
+    }
+      
+
     //restart the random
     srand(time(NULL));
 
@@ -597,27 +717,39 @@ void PSO(int index, struct agent *agents, struct point2d r[Nb_x][Nb_y], float ph
         for(int k = 0; k < NUM_OF_DIMENSIONS; k++)
             temp[k] = pBests[i + k];
     
-        if (cost_function(index, temp, agents, r, phi) < cost_function(index, gBest, agents, r, phi))
+        if (cost_function(index, temp, agents) < cost_function(index, gBest, agents))
         {
             for (int k = 0; k < NUM_OF_DIMENSIONS; k++)
                 gBest[k] = temp[k];
         }
     }
 
-    cuda_pso(index, positions, velocities, pBests, gBest, agents, r, phi);
+    cuda_pso(index, positions, velocities, pBests, gBest, agents, r_out, phi_out);
 
     for (int k = 0; k < N; k++) agents[index].u_phi[k] = gBest[k];
     for (int k = 0; k < N; k++) agents[index].u_v[k] = gBest[k+N];
+
+    //zero all the cells that the agents are planning to visit
+    for (int i = 0; i < I; i++)
+    {
+      for (int l = 0; l < Nb_x; l++)
+      {
+        for (int j = 0; j < Nb_y; j++)
+        {
+          agents[i].b[l][j] = 0;
+        }
+      }
+    }
 }
 
-float calculate_F(float x,float y, bool b_[Nb_x][Nb_y], struct point2d r[Nb_x][Nb_y], float phi[Nb_x][Nb_y])
+float calculate_F(float x,float y, signed char b_[Nb_x][Nb_y])
 {
   float d = 0;
   for (int i = 0; i < Nb_x; i++)
   {
     for (int j = 0; j < Nb_y; j++)
     {
-      if (b_[i][j] == 0) d = d + phi[i][j]*sqrt((x-r[i][j].x)*(x-r[i][j].x) + (y-r[i][j].y)*(y-r[i][j].y));
+      if (b_[i][j] == 0) d = d + phi_out[i][j]*((x-r_out[i][j].x)*(x-r_out[i][j].x) + (y-r_out[i][j].y)*(y-r_out[i][j].y));
     }
   } 
   return d;
@@ -634,7 +766,8 @@ bool check_if_grid_is_inside_R(float x,float y, struct point2d r)
     float ry2 = r.y + res/2;
     float ry3 = r.y + res/2;
     float ry4 = r.y - res/2;
-    if ( (calc_d(x,y,rx1,ry1) < R) && (calc_d(x,y,rx2,ry2) < R) && (calc_d(x,y,rx3,ry3) < R) && (calc_d(x,y,rx4,ry4) < R) )
+
+    if ( (calc_d(x,y,rx1,ry1) < (R2)) && (calc_d(x,y,rx2,ry2) < (R2)) && (calc_d(x,y,rx3,ry3) < (R2)) && (calc_d(x,y,rx4,ry4) < (R2)) )
     {
         return 1;
     }
@@ -646,5 +779,5 @@ bool check_if_grid_is_inside_R(float x,float y, struct point2d r)
 
 float calc_d(float x1,float y1,float x2,float y2)
 {
-    return sqrt((x1-x2)*(x1-x2) + (y1-y2)*(y1-y2));
+    return ((x1-x2)*(x1-x2) + (y1-y2)*(y1-y2));
 }

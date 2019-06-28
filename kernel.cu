@@ -1,31 +1,36 @@
 #include <cuda_runtime.h>
 #include <cuda.h>
 #include <math_functions.h>
+#include <string>
 
+#include <curand_kernel.h>
+#include <curand.h>
 #include "kernel.h"
 
 __device__ float tempParticle1[NUM_OF_DIMENSIONS];
 __device__ float tempParticle2[NUM_OF_DIMENSIONS];
 
-
-__device__ float cuda_calculate_F(float x,float y, bool b_[Nb_x][Nb_y], struct point2d r[Nb_x][Nb_y], float phi[Nb_x][Nb_y])
+//Calculate the distance from the position x,y to all unvisited cells times the award
+__device__ float cuda_calculate_F(float x,float y, signed char b_[Nb_x][Nb_y],struct point2d r[Nb_x][Nb_y], float phi[Nb_x][Nb_y])
 {
   float d = 0;
   for (int i = 0; i < Nb_x; i++)
   {
     for (int j = 0; j < Nb_y; j++)
     {
-      if (b_[i][j] == 0) d = d + phi[i][j]*sqrt((x-r[i][j].x)*(x-r[i][j].x) + (y-r[i][j].y)*(y-r[i][j].y));
+      if (b_[i][j] == 0) d = d + phi[i][j]*((x-r[i][j].x)*(x-r[i][j].x) + (y-r[i][j].y)*(y-r[i][j].y));
     }
   } 
   return d;
 }
 
+//Calculate the distance between two 2d-points
 __device__ float cuda_calc_d(float x1,float y1,float x2,float y2)
 {
-    return sqrt((x1-x2)*(x1-x2) + (y1-y2)*(y1-y2));
+    return ((x1-x2)*(x1-x2) + (y1-y2)*(y1-y2));
 }
 
+//Check if the 4 vertices of the grid are inside the UAV sensor radius
 __device__ bool cuda_check_if_grid_is_inside_R(float x,float y, struct point2d r)
 {
     float rx1 = r.x + res/2;
@@ -37,7 +42,7 @@ __device__ bool cuda_check_if_grid_is_inside_R(float x,float y, struct point2d r
     float ry2 = r.y + res/2;
     float ry3 = r.y + res/2;
     float ry4 = r.y - res/2;
-    if ( (cuda_calc_d(x,y,rx1,ry1) < R) && (cuda_calc_d(x,y,rx2,ry2) < R) && (cuda_calc_d(x,y,rx3,ry3) < R) && (cuda_calc_d(x,y,rx4,ry4) < R) )
+    if ( (cuda_calc_d(x,y,rx1,ry1) < R2) && (cuda_calc_d(x,y,rx2,ry2) < R2) && (cuda_calc_d(x,y,rx3,ry3) < R2) && (cuda_calc_d(x,y,rx4,ry4) < R2) )
     {
         return 1;
     }
@@ -47,6 +52,7 @@ __device__ bool cuda_check_if_grid_is_inside_R(float x,float y, struct point2d r
     }
 }
 
+//Calculate the states based on the control inputs
 __device__ void cuda_forward_euler(float *x, float *y, float *psi, float v_w, float psi_w, float u_phi[], float u_v[], float Dt)
 {   
     float dx, dy, v_g[N+1], chi[N+1], dchi;
@@ -76,6 +82,7 @@ __device__ void cuda_forward_euler(float *x, float *y, float *psi, float v_w, fl
   }
 }
 
+//cost function F - sum_phi_b
 __device__ float cuda_cost_function(int index, float controls[], struct agent agents[], struct point2d r[Nb_x][Nb_y], float phi[Nb_x][Nb_y])
 {
     for (int k = 0; k < N; k++) agents[index].u_phi[k] = controls[k];
@@ -85,23 +92,23 @@ __device__ float cuda_cost_function(int index, float controls[], struct agent ag
     //EVALUATE COST FUNCTION
     float F = 0;
     float total_cost = 0.0;
-    float sum_phi_y = 0;
+    
     float d[I];
-
+    signed char B[Nb_x][Nb_y];
+    //Accumulate the cells visited by the agents and the ones that the other agents plan to visit
     for (int i = 0; i < I; i++)
     {
         if (i != index) 
         {
-          for (int j = 0; j < Nb_x; j++)
-          {
-            for (int k = 0; k < Nb_y; k++)
+            for (int j = 0; j < Nb_x; j++)
             {
-              agents[index].B[j][k] = agents[index].B[j][k] || agents[i].b[j][k];
+                for (int k = 0; k < Nb_y; k++)
+                {
+                    B[j][k] = agents[index].B[j][k] || agents[i].B[j][k] || agents[i].b[j][k];
+                }
             }
-          }
         }
     } 
-
     //anti colision for future steps. current step doesn't matter
     for (int k = 1; k < N; k++)
     {
@@ -111,12 +118,12 @@ __device__ float cuda_cost_function(int index, float controls[], struct agent ag
         if ((d[i] < r_c) && (i != index)) return 99999999999999999999999999999999999999999999999999999999999999999999.9;
       }
     }
-
+    
     for (int k = 0; k < (N+1); k++)
     { 
         //Lagrangian term
-        float phi_y = 0;
-        //check if 50x50 cells are visited
+        
+        //check if cells are being visited
         int x_idx = (int)agents[index].x[k]/res;
         int y_idx = (int)agents[index].y[k]/res;
         for (int i = (x_idx - R/res); i <= (x_idx + R/res); i++)
@@ -124,23 +131,30 @@ __device__ float cuda_cost_function(int index, float controls[], struct agent ag
             for (int j = (y_idx - R/res); j <= (y_idx + R/res); j++)
             {
                 //printf("x=%f,y=%f \n",x1[k],y1[k]);
-                if (cuda_check_if_grid_is_inside_R(agents[index].x[k],agents[index].y[k],r[i][j]))
+                if ( (i>=0) && (i<Nb_x) && (j>=0) && (j<Nb_y) && cuda_check_if_grid_is_inside_R(agents[index].x[k],agents[index].y[k],r[i][j]))
                 {
-                    agents[index].B[i][j] = 1;
+                    if (B[i][j] == 0) B[i][j] = 1;
+                    if (B[i][j] == 1) B[i][j] = -1;
                 }
             }
         }
+    }
+
+    float sum_phi_y = 0;
+    float phi_y;
+    for (int k = 0; k < (N+1); k++)
+    {
+        phi_y = 0;
         for (int i = 0; i < Nb_x; i++)
         {
             for (int j = 0; j < Nb_y; j++)
             {
-                phi_y = phi_y + phi[i][j]*agents[index].B[i][j];
+                if (B[i][j] != 0) phi_y = phi_y + phi[i][j]*B[i][j];
             }
         }
         sum_phi_y = sum_phi_y + phi_y;
     }
-
-    F = cuda_calculate_F(agents[index].x[N],agents[index].y[N],agents[index].B,r,phi); //r_x[Nb], r_y[Nb]: position of center of cells; b[Nb] is the binary of cell visit
+    F = 0.01*cuda_calculate_F(agents[index].x[N],agents[index].y[N],B,r,phi); //r_x[Nb], r_y[Nb]: position of center of cells; b[Nb] is the binary of cell visit
     total_cost = F - sum_phi_y; //Eq 13
     return total_cost;
 }
@@ -183,7 +197,7 @@ __global__ void kernelUpdatePBest(int index, float *positions, float *pBests, fl
         tempParticle2[j] = pBests[i + j];
     }
 
-    if (cuda_cost_function(index,tempParticle1,agents,r,phi) < cuda_cost_function(index,tempParticle2,agents,r,phi))
+    if (cuda_cost_function(index,tempParticle1,agents, r, phi) < cuda_cost_function(index,tempParticle2,agents, r, phi))
     {
         for (int k = 0; k < NUM_OF_DIMENSIONS; k++)
             pBests[i + k] = positions[i + k];       
@@ -205,7 +219,7 @@ extern "C" void cuda_pso(int index, float positions[], float velocities[], float
     cudaMalloc((void**)&devPBest, sizeof(float) * size);
     cudaMalloc((void**)&devGBest, sizeof(float) * NUM_OF_DIMENSIONS);
     // Thread & Block number
-    int threadsNum = 256;
+    int threadsNum = 128;
     int blocksNum = NUM_OF_PARTICLES / threadsNum;
     // Copy particle datas from host to device
     cudaMemcpy(devPos, positions, sizeof(float) * size, cudaMemcpyHostToDevice);
@@ -236,7 +250,7 @@ extern "C" void cuda_pso(int index, float positions[], float velocities[], float
             for(int k = 0; k < NUM_OF_DIMENSIONS; k++)
                 temp[k] = pBests[i + k];
         
-            if (cost_function(index,temp,agents,r,phi) < cost_function(index, gBest,agents,r,phi))
+            if (cost_function(index,temp,agents) < cost_function(index, gBest,agents))
             {
                 for (int k = 0; k < NUM_OF_DIMENSIONS; k++)
                     gBest[k] = temp[k];

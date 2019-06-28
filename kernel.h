@@ -2,24 +2,25 @@ const int 		I = 3; 						//Number of agents
 
 //Limits for the search and rescue area [m]
 const float x_min = 0; 
-const float x_max = 5000;
+const float x_max = 4800;
 const float y_min = 0;
-const float y_max = 5000;
+const float y_max = 4800;
 
 const float res = 100; //resolution of the grids [m]
 const float R = 200.0; //sensor radius [m]
+const float R2 = R*R; //sensor radius [m]
 
 const int Nb_x = (x_max-x_min)/res; //number of grids in x axis: 50
 const int Nb_y = (y_max-y_min)/res; //number of grids in y axis: 50
 
-const float 	horizon = 25.0; 				//time horizon [s]
-const int 		N = 25; 						//N (discretization steps)
+const float 	horizon = 20.0; 				//time horizon [s]
+const int 		N = 20; 						//N (discretization steps)
 const int 		N_max = 30;						//N max (discretization steps) - IMC message
 const float 	Dt_MPC = horizon/(float)N; 		//delta time [s]
 
-const int 		NUM_OF_PARTICLES = 1024;	//number of PSO particles
+const int 		NUM_OF_PARTICLES = 256;	//number of PSO particles
 const int 		NUM_OF_DIMENSIONS = N*2;	//number of PSO dimensions
-const int 		MAX_ITER = 40;				//number of iterations
+const int 		MAX_ITER = 15;				//number of iterations
 const float 	c1 = 1;						//PSO local coefficient
 const float 	c2 = 2;						//PSO global coefficient
 const float 	OMEGA = 1;					//inertia weight
@@ -27,9 +28,9 @@ const float 	OMEGA = 1;					//inertia weight
 const float 	pi = 3.14159265359;			//the constant PI
 const float 	g = 9.81; 					//gravity acceleration [m/s^2]
 
-const float 	a = 10.0;  					//for Eq. 11
-const float 	b = 1.0;    				//for Eq. 11
-const float 	c = 10.0;    				//for Eq. 11
+const float 	a = 1.0;  					//for Eq. 11
+const float 	b = 0.0;    				//for Eq. 11
+const float 	c = 0.0;    				//for Eq. 11
 
 const float 	r_c = 100.0;    			//anti colision
 
@@ -49,8 +50,8 @@ const float eta_p_bldc      = 0.5;      //Propulsion efficiency - shotuld be adj
 const float k_               = 1.0 / (pi * 3.9 * 0.9);
 
 //Reference latitude and longitude of the MPC-PSO NED Frame
-const double rlat = 61.561599*pi/180;            //reference latitude
-const double rlon = 4.839016*pi/180;             //reference longitude
+const double rlat = 61.507033*pi/180;            //reference latitude
+const double rlon = 4.997606*pi/180;             //reference longitude
 
 
 //Declaring here as static because of segmentation fault (core dumped)
@@ -91,17 +92,17 @@ struct agent {
 	float psi_w = 0.785398163;
 	int type = 0;	//type (0 UAV, 1 ASV, 2 GS)
 	float constraints[4]; //dphi_min, dphi_max, dv_min, dv_max
-	bool B[Nb_x][Nb_y] = {{0}}; //if cell was already visited
+	bool B[Nb_x][Nb_y] = {{0}}; //cells already visited by agent
     bool b[Nb_x][Nb_y] = {{0}}; //planned cells to visit
 };
 
-float 	cost_function(int index, float controls[], struct agent agents[], struct point2d r[Nb_x][Nb_y], float phi[Nb_x][Nb_y]);
+float 	cost_function(int index, float controls[], struct agent agents[]);
 void 	forward_euler(float *x, float *y, float *psi, float v_w, float psi_w, float u_phi[], float u_v[], float Dt);
 float 	getRandom(float low, float high);
 float 	getRandomClamped();
-void 	PSO(int index, struct agent *agents, struct point2d r[Nb_x][Nb_y], float phi[Nb_x][Nb_y]);
+void 	PSO(int index, struct agent *agents);
 
-float 	calculate_F(float x,float y, bool b_[Nb_x][Nb_y], struct point2d r[Nb_x][Nb_y], float phi[Nb_x][Nb_y]);
+float 	calculate_F(float x,float y, signed char b_[Nb_x][Nb_y]);
 bool 	check_if_grid_is_inside_R(float x, float y, struct point2d r);
 float 	calc_d(float x1,float y1,float x2,float y2);
 
